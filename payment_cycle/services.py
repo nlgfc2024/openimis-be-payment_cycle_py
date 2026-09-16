@@ -1,3 +1,6 @@
+import random
+from datetime import date
+
 import pandas as pd
 from io import BytesIO
 
@@ -9,6 +12,20 @@ from payroll.models import BenefitConsumption, Payroll
 from payment_cycle.validations import PaymentCycleValidation
 from tasks_management.services import UpdateCheckerLogicServiceMixin, CreateCheckerLogicServiceMixin
 
+CODE_RANDOM_DIGITS = 5
+CODE_GENERATION_ATTEMPTS = 20
+
+
+def generate_unique_payment_cycle_code(model, current_date=None):
+    """Build a `<year><random 5-digit suffix>` code, retrying on collision."""
+    year = (current_date or date.today()).year
+    for _ in range(CODE_GENERATION_ATTEMPTS):
+        suffix = random.randint(0, 10 ** CODE_RANDOM_DIGITS - 1)
+        code = f"{year}{suffix:0{CODE_RANDOM_DIGITS}d}"
+        if not model.objects.filter(code=code, is_deleted=False).exists():
+            return code
+    raise ValueError("Unable to generate a unique payment cycle code, please retry.")
+
 
 class PaymentCycleService(BaseService, UpdateCheckerLogicServiceMixin, CreateCheckerLogicServiceMixin):
     OBJECT_TYPE = PaymentCycle
@@ -18,6 +35,8 @@ class PaymentCycleService(BaseService, UpdateCheckerLogicServiceMixin, CreateChe
 
     @register_service_signal('payment_cycle_service.create')
     def create(self, obj_data):
+        if not obj_data.get('code'):
+            obj_data = {**obj_data, 'code': generate_unique_payment_cycle_code(self.OBJECT_TYPE)}
         return super().create(obj_data)
 
     @register_service_signal('payment_cycle_service.update')
